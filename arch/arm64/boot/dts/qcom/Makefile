@@ -71,6 +71,11 @@ dtbo-$(CONFIG_ODESSA_DTB) += \
 	sdmmagpie-odessa-dvt2-overlay.dtbo \
 	sdmmagpie-odessa-pvt-overlay.dtbo
 
+# Keep qcom,dsi-display before its @N siblings for libfdt fixup lookup.
+DTC_FLAGS_sdmmagpie-odessa-evt1-overlay += -s
+DTC_FLAGS_sdmmagpie-odessa-dvt2-overlay += -s
+DTC_FLAGS_sdmmagpie-odessa-pvt-overlay += -s
+
 sm6150-foles-evt1-overlay.dtbo-base := \
 	sm6150-foles-base.dtb
 

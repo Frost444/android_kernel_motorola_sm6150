@@ -1083,8 +1083,9 @@ static ssize_t doreflash_store(struct device *dev,
     char prefix[FILE_NAME_LENGTH] = "focaltech";
     char template[FILE_NAME_LENGTH];
     struct input_dev *input_dev = fts_data->input_dev;
+    int ret;
 
-    if (count > FILE_NAME_LENGTH) {
+    if (!count || count >= sizeof(fwname)) {
         FTS_ERROR("%s: FW filename is too long\n", __func__);
         return -EINVAL;
     }
@@ -1102,17 +1103,19 @@ static ssize_t doreflash_store(struct device *dev,
         }
     }
 
-    memset(fwname, 0, sizeof(fwname));
-    snprintf(fwname, PAGE_SIZE, "%s", buf);
-    fwname[count - 1] = '\0';
+    memcpy(fwname, buf, count);
+    fwname[count] = '\0';
+    if (fwname[count - 1] == '\n')
+        fwname[count - 1] = '\0';
 
     mutex_lock(&input_dev->mutex);
-    fts_fw_update_vendor_name(fwname);
-    fts_fw_recovery();
+    ret = fts_fw_update_vendor_name(fwname);
+    if (!ret)
+        ret = fts_fw_recovery();
     mutex_unlock(&input_dev->mutex);
     fts_data->force_reflash = false;
 
-    return count;
+    return ret < 0 ? ret : count;
 }
 
 /* fts_driver_info interface */

@@ -32,6 +32,8 @@
 /*****************************************************************************
 * 1.Included header files
 *****************************************************************************/
+#include <linux/of.h>
+
 #include "focaltech_core.h"
 #include "focaltech_flash.h"
 
@@ -39,8 +41,7 @@
 * Static variables
 *****************************************************************************/
 #define FTS_FW_REQUEST_SUPPORT                      1
-/* Example: focaltech_ts_fw_tianma.bin */
-#define FTS_FW_NAME_PREX_WITH_REQUEST               "focaltech-ft8756-0d-0000-liber"
+#define FTS_LIBER_FW_NAME                       "focaltech-ft8756-0d-0000-liber.bin"
 
 /*****************************************************************************
 * Global variable or extern global variabls/functions
@@ -62,6 +63,34 @@ struct upgrade_module module_list[] = {
 };
 
 struct fts_upgrade *fwupgrade;
+
+static bool fts_is_liber(void)
+{
+    const char *model;
+
+    return !of_property_read_string(of_root, "model", &model) &&
+           !strcmp(model, "liber");
+}
+
+static int fts_get_fw_name(struct fts_upgrade *upg, char *name, size_t size)
+{
+    const char *vendor = upg->module_info->vendor_name;
+    int len;
+
+    if (upg->fw_name[0]) {
+        len = snprintf(name, size, "%s", upg->fw_name);
+    } else if (fts_is_liber()) {
+        len = snprintf(name, size, "%s", FTS_LIBER_FW_NAME);
+    } else {
+        if (!vendor[0])
+            vendor = upg->ts_data->panel_supplier;
+        if (!vendor || !vendor[0])
+            return -ENODATA;
+        len = snprintf(name, size, "%s.bin", vendor);
+    }
+
+    return len >= size ? -ENAMETOOLONG : 0;
+}
 
 int fts_check_bootid(void)
 {
@@ -270,14 +299,15 @@ int fts_enter_test_environment(bool test_state)
 
 int fts_fw_resume(bool need_reset)
 {
-    int ret = 0;
+    int ret;
     struct fts_upgrade *upg = fwupgrade;
     const struct firmware *fw = NULL;
     char fwname[FILE_NAME_LENGTH] = { 0 };
+    u8 *tmpbuf;
 
     FTS_INFO("fw upgrade resume function");
-    if (!upg || !upg->fw) {
-        FTS_ERROR("upg/fw is null");
+    if (!upg || !upg->module_info) {
+        FTS_ERROR("upg/module is null");
         return -EINVAL;
     }
 
@@ -286,49 +316,40 @@ int fts_fw_resume(bool need_reset)
         return -EINVAL;
     }
 
-    snprintf(fwname, FILE_NAME_LENGTH, "%s.bin", \
-             FTS_FW_NAME_PREX_WITH_REQUEST, upg->module_info->vendor_name);
+    ret = fts_get_fw_name(upg, fwname, sizeof(fwname));
+    if (ret < 0)
+        return ret;
 
-    /* 1. request firmware */
     ret = request_firmware(&fw, fwname, upg->ts_data->dev);
-    if (ret != 0) {
+    if (ret) {
         FTS_ERROR("%s:firmware(%s) request fail,ret=%d\n",
                   __func__, fwname, ret);
-        FTS_INFO("download fw from bootimage");
-        ret = fts_fw_download(upg->fw, upg->fw_length, need_reset);
-    } else {
-        FTS_INFO("firmware(%s) request successfully", fwname);
-        ret = fts_fw_download(fw->data, fw->size, need_reset);
+        if (!upg->fw || upg->fw_length < FTS_MIN_LEN)
+            return ret;
+        return fts_fw_download(upg->fw, upg->fw_length, need_reset);
     }
+
+    ret = fts_fw_download(fw->data, fw->size, need_reset);
     if (ret < 0) {
         FTS_ERROR("fw resume download failed");
-        return ret;
+        goto out;
     }
 
-    /* update to newest fw if needed */
-    if (fw != NULL) {
-        u8 *tmpbuf = NULL;
-        if (upg->fw_from_request)
-            vfree(upg->fw);
-        tmpbuf = vmalloc(fw->size);
-        if (NULL == tmpbuf) {
-            FTS_ERROR("fw buffer vmalloc fail");
-            ret = -ENOMEM;
-            goto FTS_FW_RESUME_VMALLOC_ERROR;
-        } else {
-            memcpy(tmpbuf, fw->data, fw->size);
-            upg->fw = tmpbuf;
-            upg->fw_length = fw->size;
-            upg->fw_from_request = 1;
-        }
+    /* Keep the old cache intact if allocating its replacement fails. */
+    tmpbuf = vmalloc(fw->size);
+    if (!tmpbuf) {
+        ret = -ENOMEM;
+        goto out;
     }
+    memcpy(tmpbuf, fw->data, fw->size);
+    if (upg->fw_from_request)
+        vfree(upg->fw);
+    upg->fw = tmpbuf;
+    upg->fw_length = fw->size;
+    upg->fw_from_request = 1;
 
-FTS_FW_RESUME_VMALLOC_ERROR:
-    if (fw != NULL) {
-        release_firmware(fw);
-        fw = NULL;
-    }
-
+out:
+    release_firmware(fw);
     return ret;
 }
 
@@ -395,28 +416,24 @@ int fts_fw_recovery(void)
     return ret;
 }
 
-int fts_fw_update_vendor_name(const char* name) {
+int fts_fw_update_vendor_name(const char *name)
+{
     struct fts_upgrade *upg = fwupgrade;
-    char* pos;
-    int len;
+    size_t len;
+    bool has_suffix;
 
-    if (!upg || !upg->module_info) {
-        FTS_ERROR("upgrade struct not init");
+    if (!upg || !upg->module_info || !name)
         return -EINVAL;
-    }
 
-    len = strlen(name);
-    if (len > FILE_NAME_LENGTH) {
-        FTS_ERROR("vendor name is too long");
+    len = strnlen(name, sizeof(upg->fw_name));
+    if (!len || len == sizeof(upg->fw_name))
         return -EINVAL;
-    }
-    pos = strstr(name, ".bin");
-    if (pos == NULL)
-        snprintf(upg->module_info->vendor_name, FILE_NAME_LENGTH, "%s", name);
-    else {
-        len = len - strlen(".bin");
-        snprintf(upg->module_info->vendor_name, len + 1, "%s", name);
-    }
+    has_suffix = len >= 4 && !strcmp(name + len - 4, ".bin");
+    if (len + (has_suffix ? 0 : 4) >= sizeof(upg->fw_name))
+        return -ENAMETOOLONG;
+
+    snprintf(upg->fw_name, sizeof(upg->fw_name), "%s%s", name,
+             has_suffix ? "" : ".bin");
     return 0;
 }
 
@@ -456,9 +473,9 @@ static int fts_get_fw_file_via_request_firmware(struct fts_upgrade *upg)
     u8 *tmpbuf = NULL;
     char fwname[FILE_NAME_LENGTH] = { 0 };
 
-    snprintf(fwname, FILE_NAME_LENGTH, "%s%s.bin", \
-             FTS_FW_NAME_PREX_WITH_REQUEST, \
-             upg->module_info->vendor_name);
+    ret = fts_get_fw_name(upg, fwname, sizeof(fwname));
+    if (ret < 0)
+        return ret;
 
     ret = request_firmware(&fw, fwname, upg->ts_data->dev);
     if (0 == ret) {
@@ -487,6 +504,10 @@ static int fts_get_fw_file_via_request_firmware(struct fts_upgrade *upg)
 
 static int fts_get_fw_file_via_i(struct fts_upgrade *upg)
 {
+    /* The embedded image is for Liber only, never another FT8756 panel. */
+    if (!fts_is_liber())
+        return -ENOENT;
+
     upg->fw = upg->module_info->fw_file;
     upg->fw_length = upg->module_info->fw_len;
     upg->fw_from_request = 0;
@@ -540,6 +561,8 @@ static int fts_fwupg_get_fw_file(struct fts_upgrade *upg)
 
     if (get_fw_i_flag) {
         ret = fts_get_fw_file_via_i(upg);
+        if (ret < 0)
+            return ret;
     }
 
     FTS_INFO("upgrade fw file len:%d", upg->fw_length);

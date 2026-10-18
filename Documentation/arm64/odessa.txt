@@ -1,0 +1,128 @@
+Motorola Moto G9 Plus (Odessa)
+=============================
+
+Configuration
+-------------
+
+The Cybertron configuration is arch/arm64/configs/vendor/odessa_defconfig.
+It is based on vendor/liber_defconfig, with Odessa peripheral selections
+checked against the supplied Odessa kernel. The stock configuration under
+arch/arm64/configs/stock/ is retained as a separate reference.
+
+The current SM6150 drivers are reused, including both touch suppliers,
+Egis/FPC fingerprint variants, NQ NFC, ABOV SAR, Awinic audio, BQ2597x dual
+charging and the Motorola parallel/adaptive charging drivers. Existing
+Cybertron scheduler, filesystem, crypto and suspend settings are retained.
+Unused Liber popup, Goodix, Awinic haptic and Cirrus drivers are disabled.
+The audio techpack includes its existing config/odessaautoconf.h for the
+Odessa target, enabling the matching Bolero/SE7 MI2S paths and disabling
+Cirrus overrides from the generic SM6150 audio configuration.
+
+Build
+-----
+
+    bash cyber.sh odessa
+    bash cyber.sh odessa --clean
+    bash cyber.sh odessa --menuconfig
+
+Liber remains the default target; Hanoip is unchanged. Odessa uses separate
+out-odessa/ and build/odessa/ directories, so switching targets does not reuse
+another device's configuration, DTBs or modules. Do not reuse this output
+directory for manual builds of other devices.
+
+cyber.sh manages its normal Neutron-Clang/GNU toolchains and dependencies.
+For a manual build, use an appropriate ARM64 toolchain and separate output:
+
+    make O=out-odessa ARCH=arm64 vendor/odessa_defconfig
+    make O=out-odessa ARCH=arm64 <toolchain options> Image.gz dtbs modules
+
+The build exports Image.gz, dtb, and dtbs/ containing:
+
+    sdmmagpie-odessa-base.dtb
+    sdmmagpie-odessa-evt1-overlay.dtbo
+    sdmmagpie-odessa-dvt2-overlay.dtbo
+    sdmmagpie-odessa-pvt-overlay.dtbo
+
+The revision overlays retain board IDs 0x48/0xA100, 0x48/0xB200 and
+0x49/0xC000 respectively, with MSM ID 365. Their nodes are sorted during
+compilation so libfdt resolves the unnumbered qcom,dsi-display node before
+similarly named @N siblings when processing fixups.
+
+Packaging and DTBO policy
+-------------------------
+
+Odessa does not automatically clone generic AnyKernel3 or fall back to a
+shared Liber installer. Supply a device-compatible anykernel-odessa directory
+next to or inside the kernel tree (or in HOME), or set ZIP_DIR explicitly:
+
+    ZIP_DIR=/path/to/validated/anykernel-odessa bash cyber.sh odessa
+
+The template must include anykernel.sh and tools/ak3-core.sh, enable
+ do.devicecheck=1, and restrict every nonempty device.nameN entry to odessa.
+It must preserve the installed DTBO and contain no dtbo/dtbo.img payload.
+The script checks these prerequisites; they do not prove that arbitrary
+installer shell code has the correct boot partition layout or module policy.
+Validate those against the device and recovery before installing.
+
+Without a suitable template the build retains the artifacts and skips the
+ZIP. With one, archives are written to build/odessa/, including odessa.zip.
+Both fingerprint variants are modules, as in the reference. The ROM must
+load only the driver for the fitted sensor (Egis or FPC), not both: their
+notifier symbols and GPIOs are shared. A built-in FPC driver would prevent
+the alternative Egis module from loading.
+
+Built modules are copied to the installer's modules/vendor/lib/modules/.
+Ensure the ROM loads these modules and do not reuse modules compiled for a
+different kernel, configuration or vendor ABI.
+
+This build preserves the ROM's installed DTBO. It does not flash the exported
+revision overlays or generate a dtbo.img implicitly. Confirm that the ROM's
+installed overlays are compatible with the new base DTB. Never concatenate
+raw .dtbo files and treat the result as an Android DTBO partition image.
+
+Touch firmware
+--------------
+
+AUO/Novatek and TXD/FocalTech are selected through the existing Motorola
+/chosen mmi,panel_name mechanism. Do not unconditionally enable both nodes.
+
+FocalTech initial, resume and recovery requests share one filename selection:
+
+  - Root model liber retains focaltech-ft8756-0d-0000-liber.bin and its
+    existing embedded Liber image fallback.
+  - Other models use the configured module/panel supplier. Odessa's TXD
+    panel requests txd.bin, matching the reference driver's empty-prefix
+    naming convention. No Odessa firmware blob is supplied by this port.
+  - A full filename supplied through the existing firmware-update interface
+    overrides the default consistently; an omitted .bin suffix is appended.
+
+Odessa never falls back to the Liber embedded image. Its compatible firmware
+must be available through the ROM's firmware loader/vendor firmware setup.
+If that setup supplies a different basename through the existing update
+interface, verify the requested name and firmware revision on the device.
+A successful kernel build cannot substitute for the correct firmware.
+
+Validation
+----------
+
+    bash -n cyber.sh
+    bash cyber.sh --help
+    git diff --check
+
+Verify the effective .config after Kconfig normalization, not just the input
+file. CONFIG_ODESSA_DTB must be enabled and CONFIG_LIBER_DTB disabled.
+
+With dtc/fdtoverlay available, check each compiled revision independently:
+
+    fdtoverlay -i out-odessa/arch/arm64/boot/dts/qcom/sdmmagpie-odessa-base.dtb \
+        -o /tmp/odessa-pvt.dtb \
+        out-odessa/arch/arm64/boot/dts/qcom/sdmmagpie-odessa-pvt-overlay.dtbo
+
+Check the board-selection IDs on the original .dtbo files: the overlay's root
+metadata is used for bootloader selection, not merged as fragment payload.
+Validate the actual installed stock overlays separately.
+
+Hardware testing is still required for boot/recovery, both displays and touch
+suppliers, both fingerprint variants, cameras, NFC, audio, sensors, charging,
+thermal behavior and suspend. Keep a known-working boot image and recovery
+method before testing; the build script never flashes the device itself.

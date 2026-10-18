@@ -168,6 +168,7 @@ struct fts_upgrade {
     struct upgrade_func *func;
     int module_id;
     bool fw_from_request;
+    char fw_name[FILE_NAME_LENGTH];
     u8 *fw;
     u32 fw_length;
     u8 *lic;
