@@ -2308,7 +2308,12 @@ static int _fts_ts_resume(struct device *dev)
 #ifdef FOCALTECH_SENSOR_EN
     if (ts_data->wakeable) {
 #endif
-        if (fts_gesture_resume(ts_data) == 0) {
+        /*
+         * Reset and fw download were skipped above for gesture wakeup. If the
+         * panel rails were cut during suspend, the 0flash IC is back in boot
+         * mode without fw, so only take the fast path when it still answers.
+         */
+        if (fts_wait_tp_to_valid() == 0 && fts_gesture_resume(ts_data) == 0) {
             ts_data->suspended = false;
 #ifdef FOCALTECH_SENSOR_EN
             ts_data->screen_state = SCREEN_ON;

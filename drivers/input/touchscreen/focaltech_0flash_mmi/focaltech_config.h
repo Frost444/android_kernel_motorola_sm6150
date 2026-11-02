@@ -253,7 +253,14 @@
  * NOTE: if FTS_GET_MODULE_NUM > 1, it's the fw corresponding with FTS_VENDOR_ID
  * NOTE: git may ignore xxx.i file
  */
+/*
+ * Only liber has its 0flash firmware inlined. Other devices (e.g. odessa,
+ * which ships TXD FT8756 panels) get firmware from /vendor/firmware through
+ * doreflash, as on stock.
+ */
+#ifdef CONFIG_LIBER_DTB
 #define FTS_UPGRADE_FW_FILE                      "include/firmware/focaltech-ft8756-0d-0000-liber.i"
+#endif
 
 /*
  * if FTS_GET_MODULE_NUM >= 2, fw corrsponding with FTS_VENDOR_ID2
