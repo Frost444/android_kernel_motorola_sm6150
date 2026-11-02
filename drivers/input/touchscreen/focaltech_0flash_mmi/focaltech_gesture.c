@@ -358,10 +358,8 @@ static int fts_sensor_set_enable(struct sensors_classdev *sensors_cdev,
     mutex_lock(&fts_data->state_mutex);
     if (enable == 1) {
         fts_data->should_enable_gesture = true;
-        touch_set_state(FTS_PALM_SENSOR, TOUCH_PANEL_IDX_PRIMARY);
     } else if (enable == 0) {
         fts_data->should_enable_gesture = false;
-        touch_set_state(0, TOUCH_PANEL_IDX_PRIMARY);
     } else {
         FTS_INFO("unknown enable symbol\n");
     }

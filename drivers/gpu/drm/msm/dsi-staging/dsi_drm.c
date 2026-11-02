@@ -343,18 +343,10 @@ static void dsi_bridge_tp_state_set(struct drm_bridge *bridge,
 				u32 lcd_not_sleep)
 {
 	struct dsi_bridge *c_bridge = to_dsi_bridge(bridge);
-	u32 touch_state = 0;
 
 	if (!bridge) {
 		pr_debug_once("Invalid params\n");
 		return;
-	}
-
-	if (check_touch_state(&touch_state, TOUCH_PANEL_IDX_PRIMARY) == 0) {
-		if (touch_state != 0)
-			lcd_not_sleep = touch_state;
-		else if (lcd_not_sleep == 1)
-			lcd_not_sleep = 0;
 	}
 
 	c_bridge->display->panel->lcd_not_sleep = lcd_not_sleep;

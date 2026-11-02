@@ -611,9 +611,17 @@ static int fts_read_touchdata(struct fts_ts_data *data)
         return 1;
     }
 
-    if ((ret < 0) || ((buf[1] & 0xF0) != 0x90)) {
+    if (ret < 0) {
+        FTS_ERROR("touch data read failed, ret:%d", ret);
+        return -EIO;
+    }
+
+#ifdef FOCALTECH_PALM_SENSOR_EN
+    if (!data->palm_detection_enabled)
+#endif
+    if ((buf[1] & 0xF0) != 0x90) {
 #if FTS_GESTURE_EN
-        if (data->suspended && data->should_enable_gesture) {
+        if (data->suspended && data->should_enable_gesture && !data->palm_detection_enabled) {
             ret = fts_gesture_readdata(data, NULL);
             if (0 == ret) {
                 pr_info("[FTS_TS] success to get gesture data in irq handler\n");
@@ -755,7 +763,7 @@ static int fts_read_parse_touchdata(struct fts_ts_data *data)
 
     if (data->touch_point == 0) {
 #if FTS_GESTURE_EN
-        if (data->suspended && data->should_enable_gesture) {
+        if (data->suspended && data->should_enable_gesture && !data->palm_detection_enabled) {
             detect_doubletap2wake(0, 0, FTS_TOUCH_UP);
         }
 #endif
@@ -846,7 +854,7 @@ static void fts_irq_read_report(void)
 #endif
             mutex_unlock(&ts_data->report_mutex);
 #if FTS_GESTURE_EN
-        } else if (ts_data->should_enable_gesture) {
+        } else if (ts_data->should_enable_gesture && !ts_data->palm_detection_enabled) {
             if (ts_data->touch_point == 1 && ts_data->point_num <= 1) {
                 if (detect_doubletap2wake(ts_data->events[0].x, ts_data->events[0].y, ts_data->events[0].flag)) {
                     pr_info("[FTS_TS] Software DT2W triggered at (%d, %d), reporting KEY_WAKEUP\n",
@@ -1646,8 +1654,8 @@ int drm_notifier_callback(struct notifier_block *self,
 #ifdef FOCALTECH_SENSOR_EN
             if (fts_data->should_enable_gesture) {
                 pr_info("[FTS_TS] double tap gesture suspend\n");
-                touch_set_state(FTS_PALM_SENSOR, TOUCH_PANEL_IDX_PRIMARY);
-                return FTS_PALM_SENSOR;
+                touch_set_state(0, TOUCH_PANEL_IDX_PRIMARY);
+                return 1;
             } else {
                 touch_set_state(0, TOUCH_PANEL_IDX_PRIMARY);
                 return 0;
@@ -2244,22 +2252,35 @@ static int _fts_ts_resume(struct device *dev)
         //fts_reset_proc(200);
     }
 
-    if (!ts_data->pdata->always_on_vio) {
+#ifdef FOCALTECH_SENSOR_EN
+    if (!ts_data->pdata->always_on_vio && !ts_data->wakeable && !ts_data->palm_detection_enabled) {
         FTS_INFO("Reset IC in resume");
         fts_reset_proc(200);
     }
+#else
+    if (!ts_data->pdata->always_on_vio && !ts_data->palm_detection_enabled) {
+        FTS_INFO("Reset IC in resume");
+        fts_reset_proc(200);
+    }
+#endif
 
     fts_irq_enable();
 
-    if (ts_data->pdata->dlfw_in_resume) {
-        ret = fts_wait_tp_to_valid();
-        if(ret){
-            FTS_INFO("wait tp to valid abnormal,need download fw");
-            fts_fw_resume(true);
-            msleep(10);
+#ifdef FOCALTECH_SENSOR_EN
+    if (!ts_data->wakeable && !ts_data->palm_detection_enabled) {
+#else
+    if (!ts_data->palm_detection_enabled) {
+#endif
+        if (ts_data->pdata->dlfw_in_resume) {
+            ret = fts_wait_tp_to_valid();
+            if(ret){
+                FTS_INFO("wait tp to valid abnormal,need download fw");
+                fts_fw_resume(true);
+                msleep(10);
+            }
         }
+        fts_tp_state_recovery(ts_data);
     }
-    fts_tp_state_recovery(ts_data);
 
 #if FTS_ESDCHECK_EN
     fts_esdcheck_resume();
@@ -2274,6 +2295,7 @@ static int _fts_ts_resume(struct device *dev)
         }
         ts_data->suspended = false;
 #ifdef FOCALTECH_SENSOR_EN
+        ts_data->screen_state = SCREEN_ON;
         mutex_unlock(&ts_data->state_mutex);
 #endif
         FTS_INFO("Exit from palm detect suspend mode.");
@@ -2295,6 +2317,16 @@ static int _fts_ts_resume(struct device *dev)
             FTS_INFO("Exit from gesture suspend mode.");
 #endif
             return 0;
+        } else {
+            FTS_ERROR("fts_gesture_resume failed, falling back to full reset");
+#ifdef FOCALTECH_SENSOR_EN
+            ts_data->wakeable = false;
+#endif
+            fts_reset_proc(200);
+            if (ts_data->pdata->dlfw_in_resume) {
+                fts_fw_resume(true);
+            }
+            fts_tp_state_recovery(ts_data);
         }
 #ifdef FOCALTECH_SENSOR_EN
     }

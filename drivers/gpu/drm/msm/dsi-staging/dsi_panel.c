@@ -507,7 +507,7 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 
 	pr_info("(%s)+\n", panel->name);
 
-	if(panel->tp_state_check && panel->lcd_not_sleep){
+	if(panel->tp_state_check && panel->lcd_not_sleep && panel->lcd_not_sleep == panel->panel_off_nosleep_state){
 		pr_info("(%s)+lcd not sleep \n", panel->name);
 	}else{
 		rc = dsi_pwr_enable_regulator(&panel->power_info, true);
@@ -524,10 +524,12 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 		goto error_disable_vregs;
 	}
 
-	rc = dsi_panel_reset(panel);
-	if (rc) {
-		pr_debug_once("[%s] failed to reset panel, rc=%d\n", panel->name, rc);
-		goto error_disable_gpio;
+	if (!panel->tp_state_check || !panel->lcd_not_sleep || panel->lcd_not_sleep != panel->panel_off_nosleep_state) {
+		rc = dsi_panel_reset(panel);
+		if (rc) {
+			pr_debug_once("[%s] failed to reset panel, rc=%d\n", panel->name, rc);
+			goto error_disable_gpio;
+		}
 	}
 
 	goto exit;
@@ -563,7 +565,7 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 		}
 	}
 
-	if(panel->tp_state_check && (panel_power_is_alway_on (panel) || panel->lcd_not_sleep)){
+	if(panel->tp_state_check && (panel_power_is_alway_on (panel) || (panel->lcd_not_sleep && panel->lcd_not_sleep == panel->panel_off_nosleep_state))){
 		pr_info("(%s)+lcd not sleep \n", panel->name);
 	}else{
 		if (gpio_is_valid(panel->reset_config.reset_gpio)
@@ -579,7 +581,7 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 		pr_debug_once("[%s] failed set pinctrl state, rc=%d\n", panel->name,
 		       rc);
 	}
-	if(panel->tp_state_check && panel->lcd_not_sleep){
+	if(panel->tp_state_check && panel->lcd_not_sleep && panel->lcd_not_sleep == panel->panel_off_nosleep_state){
 		pr_info("(%s)+lcd not sleep \n", panel->name);
 	}else{
 		rc = dsi_pwr_enable_regulator(&panel->power_info, false);
@@ -5172,6 +5174,8 @@ int dsi_panel_enable(struct dsi_panel *panel)
 		pr_info("-: no_panel_on_read_support is set\n");
 
 	panel->panel_initialized = true;
+	if (panel->tp_state_check)
+		panel->lcd_not_sleep = 0;
 err:
 	mutex_unlock(&panel->panel_lock);
 	return rc;
@@ -5255,7 +5259,7 @@ int dsi_panel_disable(struct dsi_panel *panel)
 			dsi_pwr_panel_regulator_mode_set(&panel->power_info,
 				"ibb", REGULATOR_MODE_STANDBY);
 		panel_power_is_alway_on(panel);
-		if(panel->tp_state_check && panel->lcd_not_sleep){
+		if(panel->tp_state_check && panel->lcd_not_sleep && panel->lcd_not_sleep == panel->panel_off_nosleep_state){
 			pr_info("(%s), tp gesture enable, just turn off panel display, not sleep.\n", panel->name);
 			rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_DISPLAY_OFF);
 		} else {
