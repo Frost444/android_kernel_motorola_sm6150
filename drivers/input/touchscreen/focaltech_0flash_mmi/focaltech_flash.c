@@ -277,16 +277,22 @@ int fts_enter_test_environment(bool test_state)
 /*
  * Firmware set through doreflash (vendor_name) takes priority, so the panel
  * keeps the firmware userspace picked for it across resume; otherwise fall
- * back to the built-in default name.
+ * back to the built-in default name. Returns -ENOENT when neither is set
+ * (odessa before doreflash), so callers don't block in request_firmware()
+ * on the usermode helper fallback for a bogus ".bin".
  */
-static void fts_fw_get_name(struct fts_upgrade *upg, char *fwname)
+static int fts_fw_get_name(struct fts_upgrade *upg, char *fwname)
 {
-    if (upg->module_info->vendor_name[0])
+    if (upg->module_info && upg->module_info->vendor_name[0])
         snprintf(fwname, FILE_NAME_LENGTH, "%s.bin",
                  upg->module_info->vendor_name);
-    else
+    else if (FTS_FW_NAME_PREX_WITH_REQUEST[0])
         snprintf(fwname, FILE_NAME_LENGTH, "%s.bin",
                  FTS_FW_NAME_PREX_WITH_REQUEST);
+    else
+        return -ENOENT;
+
+    return 0;
 }
 
 int fts_fw_resume(bool need_reset)
@@ -297,8 +303,8 @@ int fts_fw_resume(bool need_reset)
     char fwname[FILE_NAME_LENGTH] = { 0 };
 
     FTS_INFO("fw upgrade resume function");
-    if (!upg || !upg->fw) {
-        FTS_ERROR("upg/fw is null");
+    if (!upg || !upg->ts_data) {
+        FTS_ERROR("upg/ts_data is null");
         return -EINVAL;
     }
 
@@ -307,13 +313,21 @@ int fts_fw_resume(bool need_reset)
         return -EINVAL;
     }
 
-    fts_fw_get_name(upg, fwname);
-
     /* 1. request firmware */
-    ret = request_firmware(&fw, fwname, upg->ts_data->dev);
+    ret = fts_fw_get_name(upg, fwname);
+    if (ret == 0)
+        ret = request_firmware(&fw, fwname, upg->ts_data->dev);
     if (ret != 0) {
         FTS_ERROR("%s:firmware(%s) request fail,ret=%d\n",
                   __func__, fwname, ret);
+        /*
+         * No inlined firmware (odessa) and the probe-time lookup may not
+         * have finished yet: nothing to fall back to.
+         */
+        if (!upg->fw || !upg->fw_length) {
+            FTS_ERROR("no fw in bootimage, can't download");
+            return -ENODATA;
+        }
         FTS_INFO("download fw from bootimage");
         ret = fts_fw_download(upg->fw, upg->fw_length, need_reset);
     } else {
@@ -476,7 +490,11 @@ static int fts_get_fw_file_via_request_firmware(struct fts_upgrade *upg)
     u8 *tmpbuf = NULL;
     char fwname[FILE_NAME_LENGTH] = { 0 };
 
-    fts_fw_get_name(upg, fwname);
+    ret = fts_fw_get_name(upg, fwname);
+    if (ret != 0) {
+        FTS_INFO("no default fw name, wait for doreflash");
+        return ret;
+    }
 
     ret = request_firmware(&fw, fwname, upg->ts_data->dev);
     if (0 == ret) {
