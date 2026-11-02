@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Cybertron Kernel Build Script (cyber.sh)
-# Targets: Motorola SM6150 (Moto G40/G60 [hanoip] / Motorola One Fusion+ [liber])
+# Targets: Motorola SM6150 (Moto G40/G60 [hanoip] / Motorola One Fusion+ [liber] / Moto G9 Plus [odessa])
 # Base: Linux 4.14.357-openela
 # Maintainer: cool585 (DhineshCool)
 #
@@ -64,6 +64,7 @@ show_help() {
     echo -e "${BOLD}Devices:${NC}"
     echo "  liber     - Motorola One Fusion+ (vendor/liber_defconfig) [default]"
     echo "  hanoip    - Motorola Moto G40/G60 (vendor/hanoip_defconfig)"
+    echo "  odessa    - Motorola Moto G9 Plus (vendor/odessa_defconfig)"
     echo ""
     echo -e "${BOLD}Options:${NC}"
     echo "  -c, --clean             Clean out directory before building"
@@ -74,13 +75,14 @@ show_help() {
     echo -e "${BOLD}Examples:${NC}"
     echo "  $0 liber"
     echo "  $0 hanoip --clean"
+    echo "  $0 odessa"
     echo "  $0 liber -m"
     exit 0
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        liber|hanoip)
+        liber|hanoip|odessa)
             DEVICE="$1"
             shift
             ;;
@@ -117,6 +119,11 @@ case "${DEVICE}" in
         DEFCONFIG="vendor/hanoip_defconfig"
         DEVICE_NAME="Motorola Moto G40/G60 (hanoip)"
         ZIP_NAME_DEFAULT="anykernel-hanoip"
+        ;;
+    odessa)
+        DEFCONFIG="vendor/odessa_defconfig"
+        DEVICE_NAME="Motorola Moto G9 Plus (odessa)"
+        ZIP_NAME_DEFAULT="anykernel-odessa"
         ;;
     *)
         echo -e "${RED}[ERROR]: Unsupported device: ${DEVICE}${NC}"

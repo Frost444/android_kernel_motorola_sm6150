@@ -501,13 +501,29 @@ static bool panel_power_is_alway_on(struct dsi_panel *panel)
 }
 #endif
 
+/*
+ * Panels that define qcom,mdss-dsi-panel-off-nosleep-state (liber) only keep
+ * power when touch reports that exact state. Panels without it (odessa) keep
+ * the stock behaviour of staying powered for any non-zero touch state.
+ */
+static bool dsi_panel_lcd_keep_power(struct dsi_panel *panel)
+{
+	if (!panel->tp_state_check || !panel->lcd_not_sleep)
+		return false;
+
+	if (panel->panel_off_nosleep_state == PANEL_POWEROFF)
+		return true;
+
+	return panel->lcd_not_sleep == panel->panel_off_nosleep_state;
+}
+
 static int dsi_panel_power_on(struct dsi_panel *panel)
 {
 	int rc = 0;
 
 	pr_info("(%s)+\n", panel->name);
 
-	if(panel->tp_state_check && panel->lcd_not_sleep && panel->lcd_not_sleep == panel->panel_off_nosleep_state){
+	if (dsi_panel_lcd_keep_power(panel)) {
 		pr_info("(%s)+lcd not sleep \n", panel->name);
 	}else{
 		rc = dsi_pwr_enable_regulator(&panel->power_info, true);
@@ -524,7 +540,7 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 		goto error_disable_vregs;
 	}
 
-	if (!panel->tp_state_check || !panel->lcd_not_sleep || panel->lcd_not_sleep != panel->panel_off_nosleep_state) {
+	if (!dsi_panel_lcd_keep_power(panel)) {
 		rc = dsi_panel_reset(panel);
 		if (rc) {
 			pr_debug_once("[%s] failed to reset panel, rc=%d\n", panel->name, rc);
@@ -565,7 +581,7 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 		}
 	}
 
-	if(panel->tp_state_check && (panel_power_is_alway_on (panel) || (panel->lcd_not_sleep && panel->lcd_not_sleep == panel->panel_off_nosleep_state))){
+	if(panel->tp_state_check && (panel_power_is_alway_on (panel) || dsi_panel_lcd_keep_power(panel))){
 		pr_info("(%s)+lcd not sleep \n", panel->name);
 	}else{
 		if (gpio_is_valid(panel->reset_config.reset_gpio)
@@ -581,7 +597,7 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 		pr_debug_once("[%s] failed set pinctrl state, rc=%d\n", panel->name,
 		       rc);
 	}
-	if(panel->tp_state_check && panel->lcd_not_sleep && panel->lcd_not_sleep == panel->panel_off_nosleep_state){
+	if (dsi_panel_lcd_keep_power(panel)) {
 		pr_info("(%s)+lcd not sleep \n", panel->name);
 	}else{
 		rc = dsi_pwr_enable_regulator(&panel->power_info, false);
