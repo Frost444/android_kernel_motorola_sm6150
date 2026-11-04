@@ -198,5 +198,3 @@ obj-$(CONFIG_WATCHDOGTEST)	+= watchdogtest/
 obj-$(CONFIG_GNSS_SIRF)		+= gnsssirf/
 obj-$(CONFIG_GNSS)		+= gnss/
 obj-y				+= popup/
-
-obj-$(CONFIG_KSU) += kernelsu/
