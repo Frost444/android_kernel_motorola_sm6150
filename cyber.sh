@@ -340,6 +340,49 @@ if [ -d "${ZIP_DIR}" ]; then
     rm -f *.zip Image.gz dtb *.dtb Image
     rm -rf modules
 
+    # Replace osm0sis's example anykernel.sh (tuna/omap) with a Moto SM6150 A/B config
+    if [ ! -f anykernel.sh ] || grep -qE "ExampleKernel|omap_hsmmc" anykernel.sh; then
+        echo -e "${YELLOW}[INFO]: Generating anykernel.sh for ${DEVICE}...${NC}"
+        cat > anykernel.sh <<EOF
+### AnyKernel3 Ramdisk Mod Script
+## Cybertron Kernel for ${DEVICE_NAME}
+
+### AnyKernel setup
+# global properties
+properties() { '
+kernel.string=Cybertron-v19 Kernel for ${DEVICE_NAME}
+do.devicecheck=1
+do.modules=0
+do.systemless=0
+do.cleanup=1
+do.cleanuponabort=0
+device.name1=${DEVICE}
+device.name2=${DEVICE}
+device.name3=
+device.name4=
+device.name5=
+supported.versions=
+supported.patchlevels=
+supported.vendorpatchlevels=
+'; } # end properties
+
+### AnyKernel install
+## boot shell variables
+BLOCK=boot;
+IS_SLOT_DEVICE=auto;
+RAMDISK_COMPRESSION=auto;
+PATCH_VBMETA_FLAG=auto;
+
+# import functions/variables and setup patching - see for reference (DO NOT REMOVE)
+. tools/ak3-core.sh;
+
+# boot install (kernel + dtb only, ramdisk left untouched)
+split_boot;
+flash_boot;
+## end boot install
+EOF
+    fi
+
     # Copy Kernel Image
     cp -f "${BUILD_DIR}/Image.gz" "${ZIP_DIR}/Image.gz"
 
@@ -362,7 +405,7 @@ if [ -d "${ZIP_DIR}" ]; then
         for mod in ${MODULES}; do
             mod_base="$(basename "${mod}")"
             echo -e "  -> ${mod_base}"
-            "${STRIP}" --strip-unneeded "${mod}" -o "${MODULES_DIR}/${mod_base}" 2>/dev/null || \
+            "${NEUTRON_PATH}/llvm-strip" --strip-unneeded "${mod}" -o "${MODULES_DIR}/${mod_base}" 2>/dev/null || \
                 cp -f "${mod}" "${MODULES_DIR}/${mod_base}"
         done
         if [ -f "anykernel.sh" ]; then
