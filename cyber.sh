@@ -294,7 +294,17 @@ fi
 START_TIME=$(date +%s)
 echo -e "\n${BLUE}[INFO]: Building Kernel Image, Device Tree Blobs (DTBs), and Modules...${NC}\n"
 
+# Drop overlays left over from other devices, dtbo.img packs every .dtbo found in out/
+find "${OUT_DIR}/arch/arm64/boot/dts" -name "*.dtbo" -delete 2>/dev/null || true
+rm -f "${OUT_DIR}/arch/arm64/boot/dtbo.img"
+
 make "${BUILD_OPTIONS[@]}" Image.gz dtbs modules
+
+# Build dtbo.img in a separate pass so the freshly built overlays are picked up
+if grep -q "^CONFIG_BUILD_ARM64_DT_OVERLAY=y" "${OUT_DIR}/.config"; then
+    echo -e "\n${BLUE}[INFO]: Building dtbo.img...${NC}\n"
+    make "${BUILD_OPTIONS[@]}" dtbo.img
+fi
 
 # Ensure Image was generated
 KERNEL_IMG="${OUT_DIR}/arch/arm64/boot/Image.gz"
@@ -337,7 +347,7 @@ if [ -d "${ZIP_DIR}" ]; then
     cd "${ZIP_DIR}"
     
     # Clean previous builds
-    rm -f *.zip Image.gz dtb *.dtb Image
+    rm -f *.zip Image.gz dtb *.dtb Image dtbo.img
     rm -rf modules
 
     # Replace osm0sis's example anykernel.sh (tuna/omap) with a Moto SM6150 A/B config
@@ -380,7 +390,14 @@ PATCH_VBMETA_FLAG=auto;
 split_boot;
 flash_boot;
 ## end boot install
+
+# dtbo install (skipped when dtbo.img is not in the zip)
+flash_dtbo;
 EOF
+    fi
+    # Older generated configs predate dtbo flashing
+    if ! grep -q "^flash_dtbo;" anykernel.sh; then
+        printf '\n# dtbo install (skipped when dtbo.img is not in the zip)\nflash_dtbo;\n' >> anykernel.sh
     fi
 
     # Generate recovery install banner (shown by AnyKernel3 in TWRP)
@@ -410,6 +427,14 @@ EOF
 
     # Copy Kernel Image
     cp -f "${BUILD_DIR}/Image.gz" "${ZIP_DIR}/Image.gz"
+
+    # Copy dtbo.img built from the device overlays
+    DTBO_IMG="${OUT_DIR}/arch/arm64/boot/dtbo.img"
+    if [ -f "${DTBO_IMG}" ]; then
+        echo -e "${BLUE}[INFO]: Including dtbo.img...${NC}"
+        cp -f "${DTBO_IMG}" "${ZIP_DIR}/dtbo.img"
+        cp -f "${DTBO_IMG}" "${BUILD_DIR}/dtbo.img"
+    fi
 
     # Concatenate or copy DTBs if device requires them (e.g. liber)
     DTB_DIR="${OUT_DIR}/arch/arm64/boot/dts/qcom"
