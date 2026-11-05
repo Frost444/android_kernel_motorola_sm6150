@@ -392,12 +392,14 @@ flash_boot;
 ## end boot install
 
 # dtbo install (skipped when dtbo.img is not in the zip)
-flash_dtbo;
+flash_generic dtbo;
 EOF
     fi
+    # Current AK3 dropped the flash_dtbo wrapper, use flash_generic directly
+    sed -i 's/^flash_dtbo;$/flash_generic dtbo;/' anykernel.sh
     # Older generated configs predate dtbo flashing
-    if ! grep -q "^flash_dtbo;" anykernel.sh; then
-        printf '\n# dtbo install (skipped when dtbo.img is not in the zip)\nflash_dtbo;\n' >> anykernel.sh
+    if ! grep -q "^flash_generic dtbo;" anykernel.sh; then
+        printf '\n# dtbo install (skipped when dtbo.img is not in the zip)\nflash_generic dtbo;\n' >> anykernel.sh
     fi
 
     # Generate recovery install banner (shown by AnyKernel3 in TWRP)
