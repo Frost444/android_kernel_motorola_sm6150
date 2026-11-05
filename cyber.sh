@@ -455,8 +455,22 @@ EOF
         sed -i "s/device.name2=.*/device.name2=${DEVICE}/g" anykernel.sh
     fi
 
+    # Some recoveries ship a broken unzip (e.g. ziptool failing to link libbase),
+    # which makes AK3 abort before its own busybox is extracted. Embed the static
+    # busybox at the end of update-binary and fall back to its unzip applet.
+    UPDATE_BINARY="META-INF/com/google/android/update-binary"
+    UPDATE_BINARY_ORIG="${BUILD_DIR}/.update-binary.orig"
+    cp -f "${UPDATE_BINARY}" "${UPDATE_BINARY_ORIG}"
+    if [ -f tools/busybox ] && grep -qx 'unzip -o "$ZIPFILE";' "${UPDATE_BINARY}"; then
+        BB_SIZE=$(stat -c %s tools/busybox)
+        sed -i "s|^unzip -o \"\$ZIPFILE\";\$|unzip -o \"\$ZIPFILE\" \|\| { tail -c ${BB_SIZE} \"\$0\" > \$AKHOME/busybox; chmod 755 \$AKHOME/busybox; \$AKHOME/busybox unzip -o \"\$ZIPFILE\"; };|" "${UPDATE_BINARY}"
+        printf '\nexit 0;\n' >> "${UPDATE_BINARY}"
+        cat tools/busybox >> "${UPDATE_BINARY}"
+    fi
+
     # Create flashable zip
     zip -r9 "${ZIP_NAME}" ./* -x .git* README.md ./*placeholder &>/dev/null
+    mv -f "${UPDATE_BINARY_ORIG}" "${UPDATE_BINARY}"
 
     # Create convenient copy aliases
     cp -f "${ZIP_NAME}" "${BUILD_DIR}/${ZIP_NAME}"
