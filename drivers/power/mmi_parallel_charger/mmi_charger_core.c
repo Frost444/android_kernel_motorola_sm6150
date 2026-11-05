@@ -1834,7 +1834,8 @@ static int mmi_chrg_manager_probe(struct platform_device *pdev)
 
 		chip->extrn_psy = power_supply_get_by_name(chip->extrn_fg_name);
 		if (!chip->extrn_psy) {
-			mmi_chrg_err(chip, "Get extrn psy failed\n");
+			mmi_chrg_err(chip, "Get extrn psy failed, deferring\n");
+			ret = -EPROBE_DEFER;
 			goto cleanup;
 		}
 		ret = batt_psy_register(chip);
@@ -1869,8 +1870,14 @@ static int mmi_chrg_manager_probe(struct platform_device *pdev)
 	} else
 		chip->batt_psy = power_supply_get_by_name("battery");
 
+	/*
+	 * Built-in, this probes before the battery power_supply exists. Returning
+	 * 0 here left the device bound without drvdata, and mmi_chrg_suspend()
+	 * then crashed on the first deep sleep. Defer until it is registered.
+	 */
 	if (!chip->batt_psy) {
-		mmi_chrg_err(chip, "Could not get battery power_supply\n");
+		mmi_chrg_err(chip, "Could not get battery power_supply, deferring\n");
+		ret = -EPROBE_DEFER;
 		goto cleanup;
 	}
 
@@ -1924,9 +1931,11 @@ static int mmi_chrg_manager_probe(struct platform_device *pdev)
 	mmi_chrg_info(chip, "mmi chrg manager initialized successfully, ret %d\n", ret);
 	return 0;
 cleanup:
+	if (chip->qcom_psy)
+		power_supply_put(chip->qcom_psy);
 	mmi_charger_class_exit();
 	devm_kfree(&pdev->dev, chip);
-	return ret;
+	return ret ? ret : -ENODEV;
 }
 
 static int mmi_chrg_manager_remove(struct platform_device *pdev)
@@ -1949,6 +1958,9 @@ static int mmi_chrg_suspend(struct device *device)
 	struct platform_device *pdev = to_platform_device(device);
 	struct mmi_charger_manager *chip = platform_get_drvdata(pdev);
 
+	if (!chip)
+		return 0;
+
 	chip->suspended = true;
 
 	return 0;
@@ -1958,6 +1970,9 @@ static int mmi_chrg_resume(struct device *device)
 {
 	struct platform_device *pdev = to_platform_device(device);
 	struct mmi_charger_manager *chip = platform_get_drvdata(pdev);
+
+	if (!chip)
+		return 0;
 
 	chip->suspended = false;
 
