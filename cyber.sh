@@ -497,10 +497,8 @@ EOF
     zip -r9 "${ZIP_NAME}" ./* -x .git* README.md ./*placeholder &>/dev/null
     mv -f "${UPDATE_BINARY_ORIG}" "${UPDATE_BINARY}"
 
-    # Create convenient copy aliases
+    # Copy flashable zip to the build directory
     cp -f "${ZIP_NAME}" "${BUILD_DIR}/${ZIP_NAME}"
-    cp -f "${ZIP_NAME}" "${ZIP_DIR}/${DEVICE}.zip"
-    cp -f "${ZIP_NAME}" "${BUILD_DIR}/${DEVICE}.zip"
 
     ZIP_SIZE=$(du -h "${BUILD_DIR}/${ZIP_NAME}" | cut -f1)
 
@@ -509,7 +507,6 @@ EOF
     echo "==================================================${NC}"
     echo -e " File       : ${CYAN}${BOLD}${ZIP_NAME}${NC} (${ZIP_SIZE})"
     echo -e " Location   : ${GREEN}${BUILD_DIR}/${ZIP_NAME}${NC}"
-    echo -e " Alias      : ${GREEN}${BUILD_DIR}/${DEVICE}.zip${NC}"
     echo -e " Total Time : ${BOLD}${MINUTES}m ${SECONDS}s${NC}"
     echo "=================================================="
 else
