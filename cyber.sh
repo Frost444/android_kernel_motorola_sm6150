@@ -383,6 +383,31 @@ flash_boot;
 EOF
     fi
 
+    # Generate recovery install banner (shown by AnyKernel3 in TWRP)
+    KERNEL_RELEASE="$(cat "${OUT_DIR}/include/config/kernel.release" 2>/dev/null || echo unknown)"
+    cat > banner <<'EOF'
+
+  ___ __   __ ___  ___  ___
+ / __|\ \ / /| _ )| __|| _ \
+| (__  \ V / | _ \| _| |   /
+ \___|  |_|  |___/|___||_|_\
+   _____  ___   ___   _  _
+  |_   _|| _ \ / _ \ | \| |
+    | |  |   /| (_) || .` |
+    |_|  |_|_\ \___/ |_|\_|
+
+EOF
+    cat >> banner <<EOF
+ ============================
+     Cybertron Kernel v19
+ ============================
+ Device  : ${DEVICE_NAME}
+ Kernel  : ${KERNEL_RELEASE}
+ Built   : $(date +"%Y-%m-%d %H:%M")
+ By      : cool585 & Thiago
+ ============================
+EOF
+
     # Copy Kernel Image
     cp -f "${BUILD_DIR}/Image.gz" "${ZIP_DIR}/Image.gz"
 
