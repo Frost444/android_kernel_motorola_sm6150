@@ -323,8 +323,8 @@ if [ -f "${OUT_DIR}/arch/arm64/boot/Image" ]; then
 fi
 
 # Step 5: Packaging with AnyKernel3
-RANDOM_ID=$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')
-ZIP_NAME="cybertron-${RANDOM_ID}.zip"
+TIMESTAMP=$(date +"%Y%m%d-%H%M")
+ZIP_NAME="Cybertron-v19-${DEVICE}-${TIMESTAMP}.zip"
 
 # Auto-clone AnyKernel3 if missing
 if [ ! -d "${ZIP_DIR}" ]; then
